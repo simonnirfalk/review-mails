@@ -21,7 +21,11 @@ function saveWebhook(kind, req) {
 }
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString("utf8");
+  }
+}));
 app.use(httpLogger);
 
 // Simpel shared-secret (valgfri)
