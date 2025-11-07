@@ -1,0 +1,26 @@
+{
+  "name": "review-mails",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=18.17 <21"
+  },
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node --env-file=.env src/server.js",
+    "start": "NODE_ENV=production node src/server.js"
+  },
+  "dependencies": {
+    "@mailchimp/mailchimp_transactional": "^1.0.56",
+    "better-sqlite3": "^9.6.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "pino": "^9.3.2",
+    "pino-http": "^10.3.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.2"
+  }
+}
