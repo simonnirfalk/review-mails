@@ -23,11 +23,20 @@ app.use(httpLogger);
 
 //
 // ────────────────────────────────────────────────────────────────────────────────
-//  SAVING RAW WEBHOOK INPUT
+//  LOGDIR (med /data fallback hvis ikke skrivbar)
 // ────────────────────────────────────────────────────────────────────────────────
 //
-const LOGDIR = process.env.WEBHOOK_LOG_DIR || "./data/webhook-logs";
-mkdirSync(LOGDIR, { recursive: true });
+let LOGDIR = process.env.WEBHOOK_LOG_DIR || "/data/webhook-logs";
+try {
+  mkdirSync(LOGDIR, { recursive: true });
+} catch (e) {
+  // Fallback til repo-lokal mappe (ikke persistent på Render)
+  LOGDIR = "./data/webhook-logs";
+  try {
+    mkdirSync(LOGDIR, { recursive: true });
+    logger.warn({ LOGDIR, error: String(e) }, "Falling back to local webhook log dir");
+  } catch {}
+}
 
 function saveWebhook(kind, req) {
   try {
@@ -51,29 +60,50 @@ function saveWebhook(kind, req) {
 
 //
 // ────────────────────────────────────────────────────────────────────────────────
-//  HMAC AUTH (DanDomain)
+/*  HMAC AUTH (DanDomain)  */
 // ────────────────────────────────────────────────────────────────────────────────
 //
+function timingSafeEq(a, b) {
+  try {
+    const ab = Buffer.from(String(a) || "", "utf8");
+    const bb = Buffer.from(String(b) || "", "utf8");
+    if (ab.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ab, bb);
+  } catch {
+    return false;
+  }
+}
+
 function verifyDandomain(req, res, next) {
   const token = process.env.DANDOMAIN_TOKEN;
-  const signature = req.headers["x-webhook-signature"];
+  // DanDomain kan sende signaturen i disse header-navne
+  const sigHeader =
+    req.headers["x-webhook-signature"] ||
+    req.headers["x-hmac-sha256"] ||
+    req.headers["x-hmac"];
 
-  if (!token || !signature) {
+  if (!token || !sigHeader) {
     return res.status(401).json({ ok: false, error: "Missing signature or token" });
   }
 
-  try {
-    const hmac = crypto
-      .createHmac("sha256", token)
-      .update(req.rawBody || "")
-      .digest("base64");
+  // Rå body som sendt over nettet; fallback til JSON.stringify hvis verify-hook ikke satte rawBody
+  const raw = typeof req.rawBody === "string"
+    ? req.rawBody
+    : JSON.stringify(req.body ?? {});
 
-    if (hmac !== signature) {
+  try {
+    const computed = crypto.createHmac("sha256", token).update(raw).digest("base64");
+    if (!timingSafeEq(computed, sigHeader)) {
+      if (process.env.DEBUG_WEBHOOKS === "1") {
+        console.warn("Verify failed", {
+          topic: req.headers["x-webhook-topic"],
+          len: raw.length
+        });
+      }
       return res.status(401).json({ ok: false, error: "Invalid signature" });
     }
-
     return next();
-  } catch (e) {
+  } catch {
     return res.status(400).json({ ok: false, error: "Signature validation failed" });
   }
 }
