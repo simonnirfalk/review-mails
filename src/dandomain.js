@@ -1,6 +1,5 @@
 // src/dandomain.js
 import axios from "axios";
-import { attachDandomainDebugRoutes } from "./dandomain.js";
 
 // ───────────────────────────────────────────────────────────────────────────────
 // ENV
@@ -106,6 +105,9 @@ export async function fetchOrderById(id) {
 // DEBUG-ROUTES (optionelle)
 // ───────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Tilføjer GET /debug/gql som tester GraphQL-adgang og returnerer op til 5 seneste ordrer.
+ */
 export function attachDandomainDebugRoutes(app) {
   app.get("/debug/gql", async (_req, res) => {
     try {
@@ -116,7 +118,6 @@ export function attachDandomainDebugRoutes(app) {
         sample: list.slice(0, 2),
       });
     } catch (e) {
-      // Vis enten GraphQL-fejl (fra DD) eller generel fejl
       const payload = e?.response?.data || e?.message || String(e);
       res.status(500).json({ ok: false, error: payload });
     }
