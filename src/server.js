@@ -280,6 +280,8 @@ app.get("/health", (_req, res) => {
 //
 const PORT = process.env.PORT || 8080;
 
+attachDandomainDebugRoutes(app);
+
 app.listen(PORT, () => {
   logger.info({ PORT }, "review-mails server kører");
   startScheduler();
