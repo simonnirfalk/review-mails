@@ -63,17 +63,51 @@ export function attachDandomainDebugRoutes(app) {
     }
   });
 
+    app.get("/debug/oauth", async (_req, res) => {
+    try {
+      const started = Date.now();
+      const token = await getAccessToken();
+      const took = Date.now() - started;
+      res.json({ ok: true, tookMs: took, tokenPreview: token?.slice(0, 12) + "…" });
+    } catch (e) {
+      res.status(500).json({
+        ok: false,
+        stage: "oauth",
+        error: e?.response?.data || e.message || String(e),
+      });
+    }
+  });
+
   app.get("/debug/gql-verbose", async (_req, res) => {
     try {
+      const t0 = Date.now();
       const token = await getAccessToken();
+      const t1 = Date.now();
       const { data } = await axios.post(
-        GQL_URL,
-        { query: "query{ orders(page:1,pageSize:1){ data{ id } } }" },
-        { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } }
+        process.env.DANDOMAIN_GRAPHQL_URL,
+        { query: "query{ orders(page:1,pageSize:1){ data{ id createdAt } } }" },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Smartphoneshop-ReviewMailer/1.0",
+            Authorization: `Bearer ${token}`,
+          },
+          timeout: Number(process.env.DANDOMAIN_HTTP_TIMEOUT || 30000),
+        }
       );
-      res.json({ ok: true, tokenPreview: token?.slice(0, 12) + "…", data });
+      const t2 = Date.now();
+      res.json({
+        ok: true,
+        oauthMs: t1 - t0,
+        graphqlMs: t2 - t1,
+        sample: data?.data?.orders?.data || [],
+      });
     } catch (e) {
-      res.status(500).json({ ok: false, error: e?.response?.data || e.message || String(e) });
+      res.status(500).json({
+        ok: false,
+        stage: "graphql",
+        error: e?.response?.data || e.message || String(e),
+      });
     }
   });
 }
