@@ -6,7 +6,7 @@ const TOKEN_URL = process.env.DANDOMAIN_OAUTH_TOKEN_URL;
 const CLIENT_ID = process.env.DANDOMAIN_OAUTH_CLIENT_ID;
 const CLIENT_SECRET = process.env.DANDOMAIN_OAUTH_CLIENT_SECRET;
 
-const HTTP_TIMEOUT = Number(process.env.DANDOMAIN_HTTP_TIMEOUT || 30000);
+const HTTP_TIMEOUT = Number(process.env.DANDOMAIN_HTTP_TIMEOUT || 60000);
 
 if (!TOKEN_URL || !CLIENT_ID || !CLIENT_SECRET) {
   console.error("[DandomainAuth] Manglende ENV variables");
