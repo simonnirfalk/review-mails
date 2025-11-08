@@ -1,143 +1,122 @@
 // src/dandomain.js
 import axios from "axios";
-import https from "https";
 import { getAccessToken } from "./dandomainAuth.js";
 
-const HTTP_TIMEOUT = Number(process.env.DANDOMAIN_HTTP_TIMEOUT || 60000);
+const GRAPHQL_URL =
+  process.env.DANDOMAIN_GRAPHQL_URL ||
+  `https://${process.env.SHOP_ID || "shop99794"}.mywebshop.io/api/graphql`;
 
-const GQL_URL = (process.env.DANDOMAIN_GRAPHQL_URL || "").trim();
-if (!GQL_URL) throw new Error("DANDOMAIN_GRAPHQL_URL mangler");
+const HTTP_TIMEOUT = Number(process.env.DANDOMAIN_HTTP_TIMEOUT || 30000);
 
-async function gqlRequest({ query, variables }) {
-  const accessToken = await getAccessToken();
-  return axios.post(
-    GQL_URL,
+/**
+ * Kør et GraphQL-kald mod DanDomain med automatisk Bearer-token.
+ */
+export async function gqlRequest(query, variables = {}) {
+  const token = await getAccessToken();
+
+  const { data } = await axios.post(
+    GRAPHQL_URL,
     { query, variables },
     {
+      timeout: HTTP_TIMEOUT,
       headers: {
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
       },
-      timeout: 20000,
+      maxRedirects: 0,
+      validateStatus: (s) => s >= 200 && s < 500,
     }
   );
+
+  if (data?.errors?.length) {
+    const first = data.errors[0];
+    throw new Error(`GraphQL error: ${first.message || JSON.stringify(first)}`);
+  }
+
+  return data?.data;
 }
 
-export async function fetchLatestOrders({ page = 1, pageSize = 25 } = {}) {
-  const query = `
-    query LatestOrders($page:Int,$pageSize:Int){
-      orders(page:$page,pageSize:$pageSize){
-        data{
+/**
+ * Hent en ordre på ID
+ */
+export async function getOrderById(orderId) {
+  const q = `
+    query ($id: ID!) {
+      orderById(id: $id) {
+        id
+        createdAt
+        total(includingVAT: true)
+        customer {
+          email
+          firstName
+          lastName
+        }
+        status { code name }
+      }
+    }
+  `;
+  const data = await gqlRequest(q, { id: String(orderId) });
+  return data?.orderById || null;
+}
+
+/**
+ * Hent de seneste ordrer (til debug)
+ */
+export async function getRecentOrders(limit = 5) {
+  const q = `
+    query {
+      orders {
+        data {
           id
           createdAt
-          customer{ email firstName lastName }
-          status{ id name }
+          customer { email firstName lastName }
         }
       }
     }
   `;
-  const { data } = await gqlRequest({ query, variables: { page, pageSize } });
-  return data?.data?.orders?.data || [];
+  const data = await gqlRequest(q);
+  const list = data?.orders?.data || [];
+  // API’et returnerer typisk nyeste først – klip til limit for en sikkerheds skyld
+  return list.slice(0, limit);
 }
 
-export async function fetchOrderById(id) {
-  const query = `
-    query OrderById($id:ID!){
-      orderById(id:$id){
-        id
-        createdAt
-        customer{ email firstName lastName }
-        status{ id name }
-      }
-    }
-  `;
-  const { data } = await gqlRequest({ query, variables: { id: String(id) } });
-  return data?.data?.orderById || null;
-}
-
-// Debug routes
+/**
+ * (Valgfrit) Debug-routes så du kan teste direkte i browser/Postman
+ *
+ *  GET /debug/oauth        → tester at vi kan hente token
+ *  GET /debug/gql          → returnerer seneste 5 ordrer (lette felter)
+ *  GET /debug/gql-verbose  → returnerer seneste 5 ordrer med rådata
+ */
 export function attachDandomainDebugRoutes(app) {
-  app.get("/debug/gql", async (_req, res) => {
+  app.get("/debug/oauth", async (_req, res) => {
     try {
-      const list = await fetchLatestOrders({ page: 1, pageSize: 5 });
-      res.json({ ok: true, count: list.length, sample: list.slice(0, 2) });
+      const token = await getAccessToken();
+      res.json({ ok: true, token: token.slice(0, 16) + "…", expHint: "cached in-memory" });
     } catch (e) {
-      res.status(500).json({ ok: false, error: e?.response?.data || e.message || String(e) });
+      res.status(500).json({ ok: false, stage: "oauth", error: String(e.message || e) });
     }
   });
 
-    app.get("/debug/oauth", async (_req, res) => {
+  app.get("/debug/gql", async (_req, res) => {
     try {
-      const started = Date.now();
-      const token = await getAccessToken();
-      const took = Date.now() - started;
-      res.json({ ok: true, tookMs: took, tokenPreview: token?.slice(0, 12) + "…" });
+      const orders = await getRecentOrders(5);
+      res.json({ ok: true, count: orders.length, orders });
     } catch (e) {
-      res.status(500).json({
-        ok: false,
-        stage: "oauth",
-        error: e?.response?.data || e.message || String(e),
-      });
+      res.status(500).json({ ok: false, stage: "gql", error: String(e.message || e) });
     }
   });
 
   app.get("/debug/gql-verbose", async (_req, res) => {
     try {
-      const t0 = Date.now();
-      const token = await getAccessToken();
-      const t1 = Date.now();
-      const { data } = await axios.post(
-        process.env.DANDOMAIN_GRAPHQL_URL,
-        { query: "query{ orders(page:1,pageSize:1){ data{ id createdAt } } }" },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": "Smartphoneshop-ReviewMailer/1.0",
-            Authorization: `Bearer ${token}`,
-          },
-          timeout: Number(process.env.DANDOMAIN_HTTP_TIMEOUT || 60000),
-        }
-      );
-      const t2 = Date.now();
-      res.json({
-        ok: true,
-        oauthMs: t1 - t0,
-        graphqlMs: t2 - t1,
-        sample: data?.data?.orders?.data || [],
-      });
+      const orders = await getRecentOrders(5);
+      const hydrated = [];
+      for (const o of orders) {
+        hydrated.push(await getOrderById(o.id));
+      }
+      res.json({ ok: true, count: hydrated.length, orders: hydrated });
     } catch (e) {
-      res.status(500).json({
-        ok: false,
-        stage: "graphql",
-        error: e?.response?.data || e.message || String(e),
-      });
+      res.status(500).json({ ok: false, stage: "gql-verbose", error: String(e.message || e) });
     }
   });
-
-  app.get("/debug/ping", async (_req, res) => {
-    const base = "https://shop99794.mywebshop.io";
-    const tokenUrl = process.env.DANDOMAIN_OAUTH_TOKEN_URL || (base + "/api/oauth/token");
-
-    const agent = new https.Agent({ keepAlive: true });
-
-    const checks = [];
-    const axiosOpts = { httpsAgent: agent, timeout: 15000, validateStatus: () => true };
-
-    try {
-      const r1 = await axios.get(base, axiosOpts);
-      checks.push({ step: "GET /", status: r1.status });
-    } catch (e) {
-      checks.push({ step: "GET /", error: e.message });
-    }
-
-    try {
-      const r2 = await axios.get(tokenUrl, axiosOpts); // bare HEAD/GET for at tjekke reachability
-      checks.push({ step: "GET /api/oauth/token", status: r2.status });
-    } catch (e) {
-      checks.push({ step: "GET /api/oauth/token", error: e.message });
-    }
-
-    res.json({ ok: true, checks });
-  });
-
 }
