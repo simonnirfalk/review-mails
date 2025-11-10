@@ -5,7 +5,7 @@ import { startScheduler } from "./scheduler.js";
 import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import crypto from "crypto";
-import { attachDandomainDebugRoutes } from "./dandomain.js"; // ← NY: importér debug-routen
+import { attachDandomainDebugRoutes } from "./dandomain.js";
 
 //
 // ────────────────────────────────────────────────────────────────────────────────
@@ -281,7 +281,7 @@ app.get("/health", (_req, res) => {
 //
 const PORT = process.env.PORT || 8080;
 
-attachDandomainDebugRoutes(app); // ← NU defineret via importen
+attachDandomainDebugRoutes(app);
 
 app.listen(PORT, () => {
   logger.info({ PORT }, "review-mails server kører");
