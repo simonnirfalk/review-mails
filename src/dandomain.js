@@ -1,79 +1,149 @@
-// src/dandomain.js
+// dandomain.js
 import axios from "axios";
 import { getDanDomainAccessToken } from "./dandomainAuth.js";
-
-const SHOP_ID = process.env.DANDOMAIN_SHOP_ID; // e.g. "shop99794"
-const GQL_URL = `https://${SHOP_ID}.mywebshop.io/api/graphql`;
+import { logger } from "./logger.js";
 
 /**
- * Fetch order by ID using DanDomain GraphQL.
- * @param {string} orderId
+ * Dynamisk GraphQL-endpoint: tillad override via .env
+ * Eksempel:
+ *   DANDOMAIN_SHOP_ID=shop99794
+ *   DANDOMAIN_GRAPHQL_URL=https://shop99794.mywebshop.io/api/graphql
  */
-export async function fetchOrderById(orderId) {
+const SHOP_ID = process.env.DANDOMAIN_SHOP_ID;
+const GQL_URL =
+  process.env.DANDOMAIN_GRAPHQL_URL ||
+  (SHOP_ID ? `https://${SHOP_ID}.mywebshop.io/api/graphql` : null);
+
+if (!GQL_URL) {
+  throw new Error("Missing DANDOMAIN_GRAPHQL_URL or DANDOMAIN_SHOP_ID");
+}
+
+/**
+ * Generisk GraphQL POST-request til DanDomain
+ */
+export async function postGraphQL(query, variables = {}) {
   const token = await getDanDomainAccessToken();
 
+  const res = await axios.post(
+    GQL_URL,
+    { query, variables },
+    {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+      validateStatus: (s) => s < 500,
+    }
+  );
+
+  if (res.status >= 400) {
+    logger.error(
+      { status: res.status, data: res.data },
+      "GraphQL request failed (HTTP error)"
+    );
+    throw new Error(`GraphQL HTTP ${res.status}`);
+  }
+
+  if (res.data.errors) {
+    logger.error({ errors: res.data.errors }, "GraphQL returned errors");
+    throw new Error(JSON.stringify(res.data.errors));
+  }
+
+  return res.data.data;
+}
+
+/**
+ * Hent ordre via ID — bruges af server.js når webhook rammer
+ */
+export async function fetchOrderById(orderId) {
   const query = `
     query GetOrder($id: ID!) {
       orderById(id: $id) {
         id
         createdAt
-        total(includingVAT: true)
-        customer { email firstName lastName }
+        total
+        subTotal
+        isPaid
+
+        status {
+          id
+        }
+
+        customer {
+          id
+          businessCustomer
+          billingAddress {
+            firstName
+            lastName
+            company
+            addressLine
+            zipCode
+            city
+            country
+            phoneNumber
+            mobileNumber
+            email
+          }
+          shippingAddress {
+            firstName
+            lastName
+            company
+            addressLine
+            zipCode
+            city
+            country
+            phoneNumber
+            mobileNumber
+            email
+          }
+        }
+
         orderLines {
           id
           productTitle
-          articleNumber
-          supplierNumber
           amount
-          price(includingVAT: true)
         }
       }
-    }
-  `;
+    }`;
 
-  const variables = { id: orderId };
-
-  const { data } = await axios.post(
-    GQL_URL,
-    { query, variables },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      timeout: 30000,
-      validateStatus: s => s < 500
-    }
-  );
-
-  if (data?.errors) {
-    throw new Error("GraphQL errors: " + JSON.stringify(data.errors));
-  }
-  return data?.data?.orderById || null;
+  const data = await postGraphQL(query, { id: orderId });
+  return data?.orderById || null;
 }
 
 /**
- * (Optional) Attach debug routes.
- * GET /debug/oauth  → attempts token fetch (no token returned, only status)
- * GET /debug/gql?id=123  → tries a real order query and returns JSON
+ * Tilføj debug routes til Express (valgfrit, men nyttigt)
  */
 export function attachDandomainDebugRoutes(app) {
-  app.get("/debug/oauth", async (req, res) => {
+  app.get("/debug/oauth", async (_req, res) => {
     try {
-      await getDanDomainAccessToken();
-      res.json({ ok: true });
+      const token = await getDanDomainAccessToken();
+      res.json({ ok: true, token: token.slice(0, 20) + "..." });
     } catch (e) {
-      res.json({ ok: false, stage: "oauth", error: String(e.message || e) });
+      res.status(500).json({ ok: false, error: e?.message || String(e) });
     }
   });
 
   app.get("/debug/gql", async (req, res) => {
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ ok: false, error: "Missing ?id=" });
     try {
-      const id = req.query.id || "PM-TEST-1001";
       const order = await fetchOrderById(id);
-      res.json({ ok: true, url: GQL_URL, id, order });
+      res.json({ ok: true, order });
     } catch (e) {
-      res.json({ ok: false, stage: "gql", error: String(e.message || e) });
+      res.status(500).json({ ok: false, error: e?.message || String(e) });
     }
   });
+  
+  // ⚠️ Kun til lokal fejlfinding: returnér HELE tokenet
+  app.get("/debug/oauth/full", async (_req, res) => {
+    try {
+      const token = await getDanDomainAccessToken();
+      res.json({ ok: true, token });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message || String(e) });
+    }
+  });
+
 }

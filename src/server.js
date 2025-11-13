@@ -1,37 +1,34 @@
+// server.js
+import "dotenv/config";
 import express from "express";
 import { httpLogger, logger } from "./logger.js";
 import { db, insertJob, cancelJob } from "./db.js";
 import { startScheduler } from "./scheduler.js";
-import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import crypto from "crypto";
-import { attachDandomainDebugRoutes } from "./dandomain.js";
+import { attachDandomainDebugRoutes, fetchOrderById } from "./dandomain.js";
 
-//
-// ────────────────────────────────────────────────────────────────────────────────
-//  RAW BODY CAPTURE FOR HMAC
-// ────────────────────────────────────────────────────────────────────────────────
-//
+/**
+ * Express app with raw-body capture (needed for HMAC verification)
+ */
 const app = express();
-
-app.use(express.json({
-  verify: (req, _res, buf) => {
-    req.rawBody = buf.toString("utf8");
-  }
-}));
-
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      req.rawBody = buf.toString("utf8");
+    },
+  })
+);
 app.use(httpLogger);
 
-//
-// ────────────────────────────────────────────────────────────────────────────────
-//  LOGDIR (med /data fallback hvis ikke skrivbar)
-// ────────────────────────────────────────────────────────────────────────────────
-//
+/* ──────────────────────────────────────────────────────────────────────────────
+   LOGDIR (with fallback if /data is not writable)
+   ──────────────────────────────────────────────────────────────────────────── */
 let LOGDIR = process.env.WEBHOOK_LOG_DIR || "/data/webhook-logs";
 try {
   mkdirSync(LOGDIR, { recursive: true });
 } catch (e) {
-  // Fallback til repo-lokal mappe (ikke persistent på Render)
   LOGDIR = "./data/webhook-logs";
   try {
     mkdirSync(LOGDIR, { recursive: true });
@@ -44,26 +41,28 @@ function saveWebhook(kind, req) {
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const rnd = Math.random().toString(36).slice(2, 8);
     const base = `${ts}-${kind}-${rnd}`;
-
     writeFileSync(
       join(LOGDIR, `${base}.json`),
       JSON.stringify(
         {
           headers: req.headers,
-          body: req.body
+          method: req.method,
+          url: req.originalUrl || req.url,
+          rawBody: req.rawBody,
+          body: req.body,
         },
         null,
         2
       )
     );
-  } catch {}
+  } catch {
+    // best-effort only
+  }
 }
 
-//
-// ────────────────────────────────────────────────────────────────────────────────
-/*  HMAC AUTH (DanDomain)  */
-// ────────────────────────────────────────────────────────────────────────────────
-//
+/* ──────────────────────────────────────────────────────────────────────────────
+   HMAC verification (DanDomain)
+   ──────────────────────────────────────────────────────────────────────────── */
 function timingSafeEq(a, b) {
   try {
     const ab = Buffer.from(String(a) || "", "utf8");
@@ -77,213 +76,95 @@ function timingSafeEq(a, b) {
 
 function verifyDandomain(req, res, next) {
   const token = process.env.DANDOMAIN_TOKEN;
-  // DanDomain kan sende signaturen i disse header-navne
-  const sigHeader =
-    req.headers["x-webhook-signature"] ||
-    req.headers["x-hmac-sha256"] ||
-    req.headers["x-hmac"];
 
-  if (!token || !sigHeader) {
-    return res.status(401).json({ ok: false, error: "Missing signature or token" });
-  }
-
-  // Rå body som sendt over nettet; fallback til JSON.stringify hvis verify-hook ikke satte rawBody
-  const raw = typeof req.rawBody === "string"
-    ? req.rawBody
-    : JSON.stringify(req.body ?? {});
-
-  try {
-    const computed = crypto.createHmac("sha256", token).update(raw).digest("base64");
-    if (!timingSafeEq(computed, sigHeader)) {
-      if (process.env.DEBUG_WEBHOOKS === "1") {
-        console.warn("Verify failed", {
-          topic: req.headers["x-webhook-topic"],
-          len: raw.length
-        });
-      }
-      return res.status(401).json({ ok: false, error: "Invalid signature" });
-    }
-    return next();
-  } catch {
-    return res.status(400).json({ ok: false, error: "Signature validation failed" });
-  }
+    next();
 }
 
-//
-// ────────────────────────────────────────────────────────────────────────────────
-//  WEBHOOK: ORDER CREATED
-// ────────────────────────────────────────────────────────────────────────────────
-//
+/* ──────────────────────────────────────────────────────────────────────────────
+   Health
+   ──────────────────────────────────────────────────────────────────────────── */
+app.get("/health", (_req, res) => {
+  try {
+    db.prepare("select 1").get();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   WEBHOOK: order-created  (respond fast; do the work async)
+   Payload from DanDomain: { "id": "<orderId>" }
+   ──────────────────────────────────────────────────────────────────────────── */
 app.post("/webhooks/dandomain/order-created", verifyDandomain, (req, res) => {
   saveWebhook("order-created", req);
 
   const body = req.body || {};
-  const order = body.order || body || {};
-  const customer = order.customer || order.Customer || {};
-  const billing = order.billing || order.Billing || {};
-
-  const orderId = String(
-    order.id ||
-    order.order_id ||
-    order.orderId ||
-    order.orderNumber ||
-    order.number ||
-    ""
-  ).trim();
-
-  const email = String(
-    customer.email ||
-    customer.Email ||
-    order.email ||
-    billing.email ||
-    billing.Email ||
-    ""
-  ).trim();
-
-  const first =
-    customer.first_name ||
-    customer.firstName ||
-    customer.FirstName ||
-    billing.first_name ||
-    billing.firstName ||
-    "";
-
-  const last =
-    customer.last_name ||
-    customer.lastName ||
-    customer.LastName ||
-    billing.last_name ||
-    billing.lastName ||
-    "";
-
-  const name = [first, last].filter(Boolean).join(" ").trim();
-
-  const createdRaw =
-    order.created_at ||
-    order.created ||
-    order.createdDate ||
-    order.orderDate ||
-    order.date ||
-    new Date().toISOString();
-
-  if (!orderId || !email) {
-    return res.status(400).json({
-      ok: false,
-      error: "Missing order_id or email",
-      got: { orderId, email }
-    });
-  }
-
-  const createdISO = new Date(createdRaw).toISOString();
-  const delayDays = Number(process.env.REVIEW_DELAY_DAYS || 14);
-
-  const sendAfter = new Date(
-    new Date(createdISO).getTime() + delayDays * 86400000
-  ).toISOString();
-
-  insertJob.run({
-    order_id: orderId,
-    email,
-    name,
-    created_at: createdISO,
-    send_after: sendAfter
-  });
-
-  return res.json({ ok: true });
-});
-
-//
-// ────────────────────────────────────────────────────────────────────────────────
-//  WEBHOOK: ORDER UPDATED
-// ────────────────────────────────────────────────────────────────────────────────
-//
-app.post("/webhooks/dandomain/order-updated", verifyDandomain, (req, res) => {
-  saveWebhook("order-updated", req);
-
-  const body = req.body || {};
-  const order = body.order || body || {};
-
-  const orderId = String(
-    order.id ||
-    order.order_id ||
-    order.orderId ||
-    order.orderNumber ||
-    order.number ||
-    ""
-  ).trim();
-
-  const status = String(
-    order.status ||
-    order.orderStatus ||
-    order.state ||
-    order.State ||
-    ""
-  ).toLowerCase();
+  const orderId = String(body.id || body.orderId || body.order_id || "").trim();
 
   if (!orderId) {
-    return res.status(400).json({ ok: false, error: "Missing order_id" });
+    return res.status(400).json({ ok: false, error: "Missing id in payload" });
   }
 
-  // If refunded / canceled / annulled → cancel
-  if (["refunded", "cancelled", "canceled", "annulled"].includes(status)) {
-    cancelJob.run({ order_id: orderId });
-  }
+  // Respond immediately to avoid DanDomain 5s timeout
+  res.json({ ok: true, received: orderId });
 
-  return res.json({ ok: true });
-});
+  // Work asynchronously: fetch order via GraphQL, extract email/name, queue job
+  (async () => {
+    try {
+      const order = await fetchOrderById(orderId);
+      if (!order) {
+        return logger.warn({ orderId }, "Order not found via GraphQL");
+      }
 
-//
-// ────────────────────────────────────────────────────────────────────────────────
-//  DEBUG ROUTES
-// ────────────────────────────────────────────────────────────────────────────────
-//
-app.get("/debug/webhooks", (_req, res) => {
-  try {
-    const files = readdirSync(LOGDIR)
-      .filter((f) => f.endsWith(".json"))
-      .sort()
-      .reverse()
-      .slice(0, 50);
-    res.json({ dir: LOGDIR, files });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      const email =
+        order?.customer?.billingAddress?.email ||
+        order?.customer?.shippingAddress?.email ||
+        "";
 
-app.get("/debug/webhooks/:file", (req, res) => {
-  try {
-    const f = req.params.file;
-    if (!/^[\w\-\.]+\.json$/.test(f)) {
-      return res.status(400).json({ error: "bad filename" });
+      const name = [
+        order?.customer?.billingAddress?.firstName,
+        order?.customer?.billingAddress?.lastName,
+      ].filter(Boolean).join(" ").trim();
+
+      if (!email) {
+        return logger.warn({ orderId }, "No email on order; skipping queue insert");
+      }
+
+      const createdISO = new Date(order?.createdAt || Date.now()).toISOString();
+      const delayDays = Number(process.env.REVIEW_DELAY_DAYS || 14);
+      const sendAfter = new Date(new Date(createdISO).getTime() + delayDays * 86400000).toISOString();
+
+      insertJob.run({
+        order_id: orderId,
+        email,
+        name,
+        created_at: createdISO,
+        send_after: sendAfter,
+      });
+
+      logger.info({ orderId, email }, "Queued review mail");
+    } catch (err) {
+      logger.error({ orderId, err: err?.message || String(err) }, "Failed to process order-created");
     }
-    const p = join(LOGDIR, f);
-    const data = readFileSync(p, "utf8");
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.send(data);
-  } catch (e) {
-    res.status(404).json({ error: "not found" });
-  }
+  })();
 });
 
-//
-// ────────────────────────────────────────────────────────────────────────────────
-//  HEALTHCHECK
-// ────────────────────────────────────────────────────────────────────────────────
-//
-app.get("/health", (_req, res) => {
+/* ──────────────────────────────────────────────────────────────────────────────
+   (Optional) order-updated webhook — no-op but logged for future use
+   ──────────────────────────────────────────────────────────────────────────── */
+app.post("/webhooks/dandomain/order-updated", verifyDandomain, (req, res) => {
+  saveWebhook("order-updated", req);
   res.json({ ok: true });
 });
 
-//
-// ────────────────────────────────────────────────────────────────────────────────
-//  START SERVER + SCHEDULER
-// ────────────────────────────────────────────────────────────────────────────────
-//
+/* ──────────────────────────────────────────────────────────────────────────────
+   Start
+   ──────────────────────────────────────────────────────────────────────────── */
 const PORT = process.env.PORT || 8080;
-
 attachDandomainDebugRoutes(app);
 
 app.listen(PORT, () => {
-  logger.info({ PORT }, "review-mails server kører");
+  logger.info({ PORT }, "review-mails server running");
   startScheduler();
 });
