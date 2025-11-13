@@ -98,6 +98,18 @@ app.get("/health", (_req, res) => {
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
+   SQLite i Render
+   ──────────────────────────────────────────────────────────────────────────── */
+app.get("/debug/review-queue", (req, res) => {
+  const rows = db.prepare(`
+    SELECT order_id, email, name, created_at, send_after, canceled, sent_at, last_error
+    FROM review_queue
+    ORDER BY created_at DESC
+  `).all();
+  res.json(rows);
+});
+
+/* ──────────────────────────────────────────────────────────────────────────────
    WEBHOOK: order-created  (respond fast; do the work async)
    Payload from DanDomain: { "id": "<orderId>" }
    ──────────────────────────────────────────────────────────────────────────── */
