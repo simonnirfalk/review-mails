@@ -109,16 +109,6 @@ app.get("/debug/review-queue", (req, res) => {
   res.json(rows);
 });
 
-app.post("/debug/clear-review-queue", (req, res) => {
-  try {
-    db.prepare("DELETE FROM review_queue").run();
-    res.json({ ok: true, message: "review_queue cleared" });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-
 /* ──────────────────────────────────────────────────────────────────────────────
    WEBHOOK: order-created  (respond fast; do the work async)
    Payload from DanDomain: { "id": "<orderId>" }
