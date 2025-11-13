@@ -1,46 +1,102 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="da">
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <body style="margin:0;padding:0;background:#f6f6f6;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f6f6;padding:24px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
-            <tr>
-              <td style="padding:24px;">
-                <h2 style="margin:0 0 8px 0;font-size:22px;">Tak for dit køb hos Smartphoneshop.dk</h2>
-                <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;">
-                  Hej {{NAME}}, vi vil rigtig gerne høre, hvordan din oplevelse var. Denne e-mail er en servicebesked og indeholder ingen markedsføring.
-                </p>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tak for dit køb hos Smartphoneshop.dk</title>
+</head>
 
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:16px 0;">
-                  <tr>
-                    <td align="center" style="padding:8px;">
-                      <a href="{{GOOGLE_URL}}" style="display:inline-block;padding:12px 16px;border-radius:6px;text-decoration:none;border:1px solid #1a73e8;">Anmeld på Google</a>
-                    </td>
-                    <td align="center" style="padding:8px;">
-                      <a href="{{PRICERUNNER_URL}}" style="display:inline-block;padding:12px 16px;border-radius:6px;text-decoration:none;border:1px solid #1a73e8;">Anmeld på PriceRunner</a>
-                    </td>
-                    <td align="center" style="padding:8px;">
-                      <a href="{{TRUSTPILOT_URL}}" style="display:inline-block;padding:12px 16px;border-radius:6px;text-decoration:none;border:1px solid #1a73e8;">Anmeld på Trustpilot</a>
-                    </td>
-                  </tr>
-                </table>
+<body style="margin:0; padding:0; background:#f6f6f6; font-family:Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f6; padding:30px 0;">
+    <tr>
+      <td align="center">
 
-                <p style="margin:16px 0 0 0;font-size:12px;color:#555;line-height:1.6;">
-                  Du modtager denne e-mail, fordi du har handlet hos os. Den er udelukkende til feedback/anmeldelser og indeholder ikke marketing. Hvis din ordre blev annulleret eller refunderet, kan du se bort fra denne besked.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="background:#f2f2f2;padding:16px;text-align:center;font-size:12px;color:#666;">
-                Smartphoneshop.dk · CVR 36499370 · Spørgsmål? info@smartphoneshop.dk
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
+        <!-- MAIN WRAPPER -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:650px; background:#ffffff; border-radius:6px; overflow:hidden;">
+
+          <!-- HEADER -->
+          <tr>
+            <td style="padding:35px 30px 10px 30px; text-align:left;">
+              <h1 style="margin:0; font-size:26px; font-weight:bold; color:#1a1a1a;">
+                Tak for dit køb hos Smartphoneshop.dk
+              </h1>
+            </td>
+          </tr>
+
+          <!-- INTRO TEXT -->
+          <tr>
+            <td style="padding:0 30px 25px 30px; color:#333333; font-size:16px; line-height:1.5;">
+              Hej {{NAME}},<br><br>
+              Vi vil rigtig gerne høre, hvordan din oplevelse hos os har været. Din feedback betyder meget – både fordi vi løbende forbedrer vores service, og fordi andre kunder bruger anmeldelser til at træffe et trygt valg.
+              <br><br>
+              Vi læser <strong>alle anmeldelser</strong>, både positive og kritiske.
+            </td>
+          </tr>
+
+          <!-- BUTTONS -->
+          <tr>
+            <td style="padding:10px 30px 10px 30px;">
+
+              <!-- BUTTON WRAPPER -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-bottom:15px;">
+                    <a href="{{GOOGLE_URL}}" 
+                       style="display:inline-block; padding:14px 22px; background:#1a73e8; color:#ffffff; text-decoration:none; border-radius:4px; font-size:16px; font-weight:bold;">
+                      Anmeld på Google
+                    </a>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td align="center" style="padding-bottom:15px;">
+                    <a href="{{PRICERUNNER_URL}}" 
+                       style="display:inline-block; padding:14px 22px; background:#005BBB; color:#ffffff; text-decoration:none; border-radius:4px; font-size:16px; font-weight:bold;">
+                      Anmeld på PriceRunner
+                    </a>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td align="center" style="padding-bottom:10px;">
+                    <a href="{{TRUSTPILOT_URL}}" 
+                       style="display:inline-block; padding:14px 22px; background:#00b67a; color:#ffffff; text-decoration:none; border-radius:4px; font-size:16px; font-weight:bold;">
+                      Anmeld på Trustpilot
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- REWARD BOX -->
+          <tr>
+            <td style="padding:25px 30px 30px 30px;">
+              <div style="background:#f1f5ff; padding:18px 20px; border-radius:6px; font-size:15px; color:#333; line-height:1.6;">
+                <strong>Vil du have et gavekort på 50 kr.?</strong><br><br>
+                Som tak for din tid giver vi gerne et gavekort på <strong>50 kr.</strong>, hvis du har lyst til at anmelde os på <strong>alle tre</strong> platforme ovenfor.<br><br>
+
+                Det er selvfølgelig helt frivilligt, og gavekortet gives <strong>uanset om dine anmeldelser er positive eller negative</strong>.<br><br>
+
+                Når du har anmeldt os, skal du blot svare på denne e-mail – så sender vi gavekortet til dig.
+              </div>
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="padding:20px 30px 40px 30px; font-size:13px; color:#666; line-height:1.5; text-align:center;">
+              Du modtager denne e-mail, fordi du har handlet hos os. Dette er en servicebesked og indeholder ingen marketing.<br><br>
+              Smartphoneshop.dk · CVR 36499370 · Spørgsmål? <a href="mailto:info@smartphoneshop.dk" style="color:#1a73e8; text-decoration:none;">info@smartphoneshop.dk</a>
+            </td>
+          </tr>
+
+        </table>
+        <!-- END MAIN WRAPPER -->
+
+      </td>
+    </tr>
+  </table>
+</body>
 </html>
