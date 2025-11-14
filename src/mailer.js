@@ -125,9 +125,24 @@ export async function sendReviewEmail({ toEmail, toName }) {
 }
 
 function renderTemplate({ name }) {
-  const g = process.env.GOOGLE_REVIEW_URL || "#";
-  const p = process.env.PRICERUNNER_REVIEW_URL || "#";
-  const t = process.env.TRUSTPILOT_REVIEW_URL || "#";
+  // Prøv først de nye navne (GOOGLE_URL osv.),
+  // fald tilbage til de gamle *_REVIEW_URL hvis de findes,
+  // og ellers til '#'
+  const g =
+    process.env.GOOGLE_URL ||
+    process.env.GOOGLE_REVIEW_URL ||
+    "#";
+
+  const p =
+    process.env.PRICERUNNER_URL ||
+    process.env.PRICERUNNER_REVIEW_URL ||
+    "#";
+
+  const t =
+    process.env.TRUSTPILOT_URL ||
+    process.env.TRUSTPILOT_REVIEW_URL ||
+    "#";
+
   return templateHtml
     .replaceAll("{{NAME}}", name || "")
     .replaceAll("{{GOOGLE_URL}}", g)
