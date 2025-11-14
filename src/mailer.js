@@ -10,14 +10,9 @@ const __dirname = dirname(__filename);
 const mandrill = mailchimp(process.env.MANDRILL_API_KEY);
 
 // ---------------------------------------------------------------------------
-// Konfiguration: enable/disable + whitelist
+// Konfiguration: enable/disable
 // ---------------------------------------------------------------------------
 const MAILER_ENABLED = process.env.MAILER_ENABLED === "1";
-
-const MAILER_WHITELIST = (process.env.MAILER_WHITELIST || "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
 
 // Load template
 const templateHtml = readFileSync(
