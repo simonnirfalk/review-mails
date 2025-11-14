@@ -110,14 +110,14 @@ app.get("/debug/review-queue", (req, res) => {
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   WEBHOOK: order-created  (respond fast; do the work async)
-   Payload from DanDomain: { "id": "<orderId>" }
+   WEBHOOK: order-shipped  (orders/fulfilled)
+   Triggered when the order is shipped. This is when we want to queue the review.
    ──────────────────────────────────────────────────────────────────────────── */
 app.post(
-  "/webhooks/dandomain/order-created",
+  "/webhooks/dandomain/order-shipped",
   verifyDandomain,
   (req, res) => {
-    saveWebhook("order-created", req);
+    saveWebhook("order-shipped", req);
 
     const body = req.body || {};
     const orderId = String(
@@ -130,15 +130,18 @@ app.post(
         .json({ ok: false, error: "Missing id in payload" });
     }
 
-    // Respond immediately to avoid DanDomain 5s timeout
+    // Respond immediately so DanDomain doesn't retry
     res.json({ ok: true, received: orderId });
 
-    // Work asynchronously: fetch order via GraphQL, extract email/name, queue job
+    // Process asynchronously
     (async () => {
       try {
         const order = await fetchOrderById(orderId);
         if (!order) {
-          return logger.warn({ orderId }, "Order not found via GraphQL");
+          return logger.warn(
+            { orderId },
+            "Order not found via GraphQL (order-shipped)"
+          );
         }
 
         const email =
@@ -157,16 +160,16 @@ app.post(
         if (!email) {
           return logger.warn(
             { orderId },
-            "No email on order; skipping queue insert"
+            "No email on order; skipping queue insert (order-shipped)"
           );
         }
 
-        const createdISO = new Date(
-          order?.createdAt || Date.now()
-        ).toISOString();
-        const delayDays = Number(process.env.REVIEW_DELAY_DAYS || 14);
+        // New logic: createdAt = now
+        const createdISO = new Date().toISOString();
+        const delayDays = Number(process.env.REVIEW_DELAY_DAYS || 5);
+
         const sendAfter = new Date(
-          new Date(createdISO).getTime() + delayDays * 86400000
+          Date.now() + delayDays * 86400000
         ).toISOString();
 
         insertJob.run({
@@ -177,11 +180,14 @@ app.post(
           send_after: sendAfter,
         });
 
-        logger.info({ orderId, email }, "Queued review mail");
+        logger.info(
+          { orderId, email },
+          "Queued review mail (order-shipped)"
+        );
       } catch (err) {
         logger.error(
           { orderId, err: err?.message || String(err) },
-          "Failed to process order-created"
+          "Failed to process order-shipped"
         );
       }
     })();
