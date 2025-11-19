@@ -6,7 +6,7 @@
 
 import "dotenv/config";
 import axios from "axios";
-import { getDanDomainAccessToken } from "./dandomainAuth.js";
+import { getDanDomainAccessToken } from "../src/dandomainAuth.js";
 import { db, insertJob } from "../db.js";
 
 // Hvor langt tilbage vi kigger (default 10 dage)
