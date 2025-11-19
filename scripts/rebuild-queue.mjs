@@ -7,7 +7,7 @@
 import "dotenv/config";
 import axios from "axios";
 import { getDanDomainAccessToken } from "../src/dandomainAuth.js";
-import { db, insertJob } from "../db.js";
+import { db, insertJob } from "../src/db.js";
 
 // Hvor langt tilbage vi kigger (default 10 dage)
 const DAYS_BACK = Number(process.argv[2] || 10);
