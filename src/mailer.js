@@ -58,16 +58,6 @@ export async function sendReviewEmail({ toEmail, toName }) {
     return false;
   }
 
-  // 2) Whitelist: kun bestemte adresser må få mails i test
-  if (MAILER_WHITELIST.length > 0 && !MAILER_WHITELIST.includes(normalizedTo)) {
-    logger.info(
-      { toEmail: normalizedTo, whitelist: MAILER_WHITELIST },
-      "MAILER_WHITELIST – modtager ikke på whitelist, springer over"
-    );
-    // også her: return false så de ikke senere bliver auto-sendt ved et uheld
-    return false;
-  }
-
   const { from_email, from_name } = parseFrom();
 
   const message = {
