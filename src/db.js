@@ -7,7 +7,7 @@ import { logger } from "./logger.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const dbPath = process.env.SQLITE_PATH || "./data/review-mails.sqlite";
+const dbPath = process.env.SQLITE_PATH;
 
 // Ensure data folder exists
 if (dbPath.startsWith("./") || dbPath.startsWith("../") || dbPath.startsWith("/")) {
