@@ -237,6 +237,16 @@ app.post(
   }
 );
 
+// LIGE OVER "Start"-sektionen i server.js
+app.get("/debug/review-queue", (_req, res) => {
+  try {
+    const rows = db.prepare("SELECT * FROM review_queue ORDER BY created_at DESC").all();
+    res.json({ ok: true, count: rows.length, rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 /* ──────────────────────────────────────────────────────────────────────────────
    Start
    ──────────────────────────────────────────────────────────────────────────── */
