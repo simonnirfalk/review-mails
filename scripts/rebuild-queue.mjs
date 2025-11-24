@@ -10,7 +10,7 @@ import { getDanDomainAccessToken } from "../src/dandomainAuth.js";
 import { db, insertJob } from "../src/db.js";
 
 // Hvor langt tilbage vi kigger (default 10 dage)
-const DAYS_BACK = Number(process.argv[2] || 10);
+const DAYS_BACK = Number(process.argv[2] || 14);
 
 // KUN disse statusser må få review-mails
 // 3 = Gennemført ordre
@@ -41,7 +41,6 @@ async function fetchOrdersSince(sinceIso) {
     query RebuildQueue($limit: Int!, $page: Int!, $from: String!) {
       orders(
         pagination: { limit: $limit, page: $page }
-        order: { field: id, direction: DESC }
         search: [
           { field: createdAt, comparator: GREATER_THAN, value: $from }
         ]
