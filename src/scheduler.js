@@ -13,11 +13,21 @@ export function startScheduler() {
       logger.info({ count: rows.length }, "Scheduler: udsender due mails");
       for (const row of rows) {
         try {
-          await sendReviewEmail({ toEmail: row.email, toName: row.name });
-          markSent.run({ order_id: row.order_id, sent_at: new Date().toISOString() });
+          await sendReviewEmail({
+            toEmail: row.email,
+            toName: row.name,
+            jobId: row.id,           // 🔹 NYT
+          });
+          markSent.run({
+            order_id: row.order_id,
+            sent_at: new Date().toISOString(),
+          });
         } catch (err) {
           const msg = err?.message || String(err);
-          markError.run({ order_id: row.order_id, last_error: msg.slice(0, 500) });
+          markError.run({
+            order_id: row.order_id,
+            last_error: msg.slice(0, 500),
+          });
           logger.error({ order_id: row.order_id, msg }, "Udsendelsesfejl");
         }
       }

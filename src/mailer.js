@@ -40,7 +40,7 @@ function parseFrom() {
   };
 }
 
-export async function sendReviewEmail({ toEmail, toName }) {
+export async function sendReviewEmail({ toEmail, toName, jobId }) {
   const normalizedTo = (toEmail || "").trim().toLowerCase();
 
   if (!normalizedTo) {
@@ -69,9 +69,14 @@ export async function sendReviewEmail({ toEmail, toName }) {
     auto_text: true,
     preserve_recipients: false,
     headers: { "X-Review-Mail": "true" },
-    metadata: { purpose: "review-request" },
     tags: ["review-request", "local-test"],
+    ...(jobId && {
+      metadata: {
+        review_job_id: String(jobId),
+      },
+    }),
   };
+
 
   try {
     // IMPORTANT: async=false to get immediate per-recipient status
