@@ -516,7 +516,12 @@ app.post("/admin/review-queue/:id/resend", requireAdmin, async (req, res) => {
   }
 
   try {
-    await sendReviewEmail({ toEmail: row.email, toName: row.name });
+    await sendReviewEmail({
+      toEmail: row.email,
+      toName: row.name,
+      jobId: row.id, // 👈 vigtigt for Mandrill-webhook (metadata.review_job_id)
+    });
+
     markSent.run({
       order_id: row.order_id,
       sent_at: new Date().toISOString(),
@@ -535,7 +540,6 @@ app.post("/admin/review-queue/:id/resend", requireAdmin, async (req, res) => {
     : "";
   res.redirect(`/admin/review-queue${keyParam}`);
 });
-
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Mandrill webhook
