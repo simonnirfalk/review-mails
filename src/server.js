@@ -2,7 +2,7 @@
 import "dotenv/config";
 import express from "express";
 import { httpLogger, logger } from "./logger.js";
-import { db, insertJob, cancelJob, markSent, markError } from "./db.js";
+import { db, insertJob, cancelJob, markSent, markError, markInteraction } from "./db.js";
 import { startScheduler } from "./scheduler.js";
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
@@ -531,6 +531,101 @@ app.post("/admin/review-queue/:id/resend", requireAdmin, async (req, res) => {
   res.redirect(`/admin/review-queue${keyParam}`);
 });
 
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   Mandrill webhook
+   ──────────────────────────────────────────────────────────────────────────── */
+
+// Mandrill sender som application/x-www-form-urlencoded med feltet "mandrill_events"
+app.post(
+  "/webhooks/mandrill",
+  express.urlencoded({ extended: true }),
+  (req, res) => {
+    try {
+      const raw = req.body?.mandrill_events;
+      if (!raw) {
+        logger.warn(
+          { bodyKeys: Object.keys(req.body || {}) },
+          "Mandrill webhook uden mandrill_events"
+        );
+        // svar 400 så du kan se det i logs, men Mandrill vil prøve igen
+        return res.status(400).json({ ok: false, error: "Missing mandrill_events" });
+      }
+
+      let events;
+      try {
+        events = JSON.parse(raw);
+      } catch (e) {
+        logger.error({ raw }, "Kunne ikke parse mandrill_events JSON");
+        return res.status(400).json({ ok: false, error: "Invalid mandrill_events JSON" });
+      }
+
+      if (!Array.isArray(events)) {
+        logger.warn({ type: typeof events }, "mandrill_events er ikke et array");
+        return res.status(400).json({ ok: false, error: "mandrill_events must be an array" });
+      }
+
+      for (const ev of events) {
+        const type = ev?.event;
+        const msg = ev?.msg || {};
+        const meta = msg?.metadata || {};
+        const jobId = meta.review_job_id ? Number(meta.review_job_id) : null;
+
+        if (!jobId || !Number.isFinite(jobId)) {
+          continue; // vi tracker kun mails hvor vi har et review_job_id
+        }
+
+        let reason = null;
+        let shouldMark = false;
+
+        switch (type) {
+          case "click":
+            shouldMark = true;
+            reason = "click";
+            break;
+          case "spam":
+            shouldMark = true;
+            reason = "spam";
+            break;
+          case "reject":
+            shouldMark = true;
+            reason = "reject";
+            break;
+          case "hard_bounce":
+          case "soft_bounce":
+          case "bounce":
+            shouldMark = true;
+            reason = "bounce";
+            break;
+          default:
+            // fx "open", "delivered" osv. – kan vi blot ignorere eller logge
+            break;
+        }
+
+        if (shouldMark) {
+          try {
+            markInteraction.run({ id: jobId, reason });
+            logger.info(
+              { jobId, type, reason },
+              "Marked review_queue row as has_interaction via Mandrill webhook"
+            );
+          } catch (err) {
+            logger.error(
+              { jobId, type, err: String(err) },
+              "Failed to markInteraction from Mandrill webhook"
+            );
+          }
+        }
+      }
+
+      // Det vigtigste for Mandrill er et 200-svar
+      return res.json({ ok: true });
+    } catch (e) {
+      logger.error({ err: String(e) }, "Mandrill webhook handler error");
+      return res.status(500).json({ ok: false });
+    }
+  }
+);
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Start
