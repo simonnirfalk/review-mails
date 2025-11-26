@@ -21,7 +21,12 @@ app.use(
     },
   })
 );
-app.use(httpLogger);
+app.use((req, res, next) => {
+  if (req.path === "/health") {
+    return next(); // ingen logging for health checks
+  }
+  return httpLogger(req, res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -577,6 +582,15 @@ app.post(
 
         let reason = null;
         let shouldMark = false;
+
+        logger.info(
+          {
+            type,
+            metadata: msg?.metadata,
+            jobId,
+          },
+          "Mandrill webhook event"
+        );
 
         switch (type) {
           case "click":
