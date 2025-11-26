@@ -42,6 +42,41 @@ CREATE INDEX IF NOT EXISTS idx_review_queue_send_after ON review_queue(send_afte
 CREATE INDEX IF NOT EXISTS idx_review_queue_email ON review_queue(email);
 `);
 
+function ensureReminderColumns() {
+  const columns = db.prepare("PRAGMA table_info(review_queue)").all();
+  const names = new Set(columns.map((c) => c.name));
+
+  const alters = [];
+
+  if (!names.has("mandrill_message_id")) {
+    alters.push("ALTER TABLE review_queue ADD COLUMN mandrill_message_id TEXT");
+  }
+  if (!names.has("has_interaction")) {
+    alters.push(
+      "ALTER TABLE review_queue ADD COLUMN has_interaction INTEGER NOT NULL DEFAULT 0"
+    );
+  }
+  if (!names.has("reminder_sent_at")) {
+    alters.push("ALTER TABLE review_queue ADD COLUMN reminder_sent_at TEXT");
+  }
+  if (!names.has("reminder_count")) {
+    alters.push(
+      "ALTER TABLE review_queue ADD COLUMN reminder_count INTEGER NOT NULL DEFAULT 0"
+    );
+  }
+  if (!names.has("reminder_blocked_reason")) {
+    alters.push(
+      "ALTER TABLE review_queue ADD COLUMN reminder_blocked_reason TEXT"
+    );
+  }
+
+  for (const sql of alters) {
+    db.exec(sql);
+  }
+}
+
+// Sørg for at kolonnerne findes, uanset om DB’en er gammel eller ny
+ensureReminderColumns();
 
 logger.info({ dbPath }, "SQLite initialiseret");
 
