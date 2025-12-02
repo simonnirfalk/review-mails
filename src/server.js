@@ -551,14 +551,31 @@ app.post(
   express.urlencoded({ extended: true }),
   (req, res) => {
     try {
+      // 💾 gem hele requesten til debug
+      saveWebhook("mandrill", req);
+
       const raw = req.body?.mandrill_events;
+
+      // ekstra logging så vi kan se hvad Mandrill faktisk sender
+      logger.info(
+        {
+          bodyKeys: Object.keys(req.body || {}),
+          hasMandrillEvents: typeof raw === "string",
+          mandrillEventsPreview:
+            typeof raw === "string" ? raw.slice(0, 300) : null,
+        },
+        "Mandrill webhook hit"
+      );
+
       if (!raw) {
         logger.warn(
           { bodyKeys: Object.keys(req.body || {}) },
           "Mandrill webhook uden mandrill_events"
         );
         // svar 400 så du kan se det i logs, men Mandrill vil prøve igen
-        return res.status(400).json({ ok: false, error: "Missing mandrill_events" });
+        return res
+          .status(400)
+          .json({ ok: false, error: "Missing mandrill_events" });
       }
 
       let events;
@@ -566,12 +583,16 @@ app.post(
         events = JSON.parse(raw);
       } catch (e) {
         logger.error({ raw }, "Kunne ikke parse mandrill_events JSON");
-        return res.status(400).json({ ok: false, error: "Invalid mandrill_events JSON" });
+        return res
+          .status(400)
+          .json({ ok: false, error: "Invalid mandrill_events JSON" });
       }
 
       if (!Array.isArray(events)) {
         logger.warn({ type: typeof events }, "mandrill_events er ikke et array");
-        return res.status(400).json({ ok: false, error: "mandrill_events must be an array" });
+        return res
+          .status(400)
+          .json({ ok: false, error: "mandrill_events must be an array" });
       }
 
       for (const ev of events) {

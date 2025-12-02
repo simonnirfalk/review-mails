@@ -70,6 +70,10 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
     preserve_recipients: false,
     headers: { "X-Review-Mail": "true" },
     tags: ["review-request", "local-test"],
+
+    track_opens: true,
+    track_clicks: true,
+
     ...(jobId && {
       metadata: {
         review_job_id: String(jobId),
@@ -77,7 +81,17 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
     }),
   };
 
-
+    logger.info(
+    {
+      to: normalizedTo,
+      track_opens: message.track_opens,
+      track_clicks: message.track_clicks,
+      hasMetadata: !!message.metadata,
+      metadata: message.metadata,
+    },
+    "MAILER: sender review-mail via Mandrill"
+  );
+  
   try {
     // IMPORTANT: async=false to get immediate per-recipient status
     const res = await mandrill.messages.send({ message, async: false });
