@@ -622,22 +622,32 @@ app.post(
             shouldMark = true;
             reason = "click";
             break;
+
+          case "open":
+            // Outlook m.fl.: vi accepterer "open" som interaktion
+            shouldMark = true;
+            reason = "open";
+            break;
+
           case "spam":
             shouldMark = true;
             reason = "spam";
             break;
+
           case "reject":
             shouldMark = true;
             reason = "reject";
             break;
+
           case "hard_bounce":
           case "soft_bounce":
           case "bounce":
             shouldMark = true;
             reason = "bounce";
             break;
+
           default:
-            // fx "open", "delivered" osv. – kan vi blot ignorere eller logge
+            // fx "delivered" osv. – ignoreres
             break;
         }
 

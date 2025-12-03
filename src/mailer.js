@@ -1,3 +1,4 @@
+// mailer.js
 import mailchimp from "@mailchimp/mailchimp_transactional";
 import { readFileSync } from "fs";
 import { logger } from "./logger.js";
@@ -52,7 +53,7 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
   if (!MAILER_ENABLED) {
     logger.info(
       { toEmail: normalizedTo },
-      "MAILER_DISABLED=0 – ville have sendt review-mail, men springer over"
+      "MAILER_ENABLED=0 – ville have sendt review-mail, men springer over"
     );
     // return false => job ender som 'error' og bliver ikke sendt senere ved et uheld
     return false;
@@ -60,17 +61,21 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
 
   const { from_email, from_name } = parseFrom();
 
+  // Render HTML med links (og log dem)
+  const html = renderTemplate({ name: toName || "" });
+
   const message = {
     from_email,
     from_name: from_name || undefined,
     subject: "Havde du en femstjernet oplevelse med Smartphoneshop.dk?",
-    to: [{ email: toEmail, name: toName || "", type: "to" }],
-    html: renderTemplate({ name: toName || "" }),
+    to: [{ email: normalizedTo, name: toName || "", type: "to" }],
+    html,
     auto_text: true,
     preserve_recipients: false,
     headers: { "X-Review-Mail": "true" },
     tags: ["review-request", "local-test"],
 
+    // 🔍 eksplicit tracking
     track_opens: true,
     track_clicks: true,
 
@@ -81,7 +86,7 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
     }),
   };
 
-    logger.info(
+  logger.info(
     {
       to: normalizedTo,
       track_opens: message.track_opens,
@@ -91,11 +96,11 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
     },
     "MAILER: sender review-mail via Mandrill"
   );
-  
+
   try {
     // IMPORTANT: async=false to get immediate per-recipient status
     const res = await mandrill.messages.send({ message, async: false });
-    logger.info({ toEmail, result: res }, "Mandrill response");
+    logger.info({ toEmail: normalizedTo, result: res }, "Mandrill response");
 
     const r = Array.isArray(res) ? res[0] : null;
     if (!r) return true;
@@ -105,25 +110,27 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
       r.status === "sent" ||
       r.status === "queued" ||
       r.status === "scheduled"
-    )
+    ) {
       return true;
+    }
 
     // Extra visibility if not sent/queued
     const since = new Date(Date.now() - 60 * 60 * 1000)
       .toISOString()
       .slice(0, 19); // last hour
     const search = await mandrill.messages.search({
-      query: `to:${toEmail}`,
+      query: `to:${normalizedTo}`,
       date_from: since,
     });
     logger.warn(
-      { toEmail, status: r.status, reject: r.reject_reason, search },
+      { toEmail: normalizedTo, status: r.status, reject: r.reject_reason, search },
       "Mandrill not-sent"
     );
     return false;
   } catch (err) {
-    const data = err?.response?.data || err?.response || err?.message || String(err);
-    logger.error({ toEmail, err: data }, "Mandrill fejl");
+    const data =
+      err?.response?.data || err?.response || err?.message || String(err);
+    logger.error({ toEmail: normalizedTo, err: data }, "Mandrill fejl");
     throw err;
   }
 }
@@ -146,6 +153,12 @@ function renderTemplate({ name }) {
     process.env.TRUSTPILOT_URL ||
     process.env.TRUSTPILOT_REVIEW_URL ||
     "#";
+
+  // Log lige hvilke links vi sender med (til debug af click tracking)
+  logger.info(
+    { GOOGLE_URL: g, PRICERUNNER_URL: p, TRUSTPILOT_URL: t },
+    "MAILER: review-links i template"
+  );
 
   return templateHtml
     .replaceAll("{{NAME}}", name || "")
