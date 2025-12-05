@@ -2,7 +2,14 @@
 import "dotenv/config";
 import express from "express";
 import { httpLogger, logger } from "./logger.js";
-import { db, insertJob, cancelJob, markSent, markError, markInteraction } from "./db.js";
+import {
+  db,
+  insertJob,
+  cancelJob,
+  markSent,
+  markError,
+  markInteraction,
+} from "./db.js";
 import { startScheduler } from "./scheduler.js";
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
@@ -105,8 +112,8 @@ function computeStatus(row) {
   if (row.sent_at) return "sent";
 
   const nowIso = new Date().toISOString();
-  if (row.send_after <= nowIso) return "due";       // burde blive taget af scheduler
-  return "scheduled";                               // venter på send_after
+  if (row.send_after <= nowIso) return "due"; // burde blive taget af scheduler
+  return "scheduled"; // venter på send_after
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -148,10 +155,12 @@ app.get("/health", (_req, res) => {
    ──────────────────────────────────────────────────────────────────────────── */
 
 app.get("/admin/review-queue", requireAdmin, (req, res) => {
-  // Hent de seneste 200 rækker
+  // Hent de seneste 200 rækker (inkl. reminder-felter og interaction)
   const rows = db
     .prepare(
-      `SELECT id, order_id, email, name, created_at, send_after, canceled, sent_at, last_error
+      `SELECT id, order_id, email, name, created_at, send_after, canceled,
+              sent_at, last_error, has_interaction,
+              reminder_sent_at, reminder_count, reminder_blocked_reason
        FROM review_queue
        ORDER BY datetime(created_at) DESC
        LIMIT 200`
@@ -176,11 +185,25 @@ app.get("/admin/review-queue", requireAdmin, (req, res) => {
 
   const htmlRows =
     filtered.length === 0
-      ? `<tr><td colspan="11">Ingen rækker fundet</td></tr>`
+      ? `<tr><td colspan="13">Ingen rækker fundet</td></tr>`
       : filtered
           .map((row) => {
             const canceledLabel = row.canceled ? "Ja" : "Nej";
             const status = row.status;
+
+            const interactionLabel = row.has_interaction ? "Ja" : "Nej";
+            const interactionDetail = row.reminder_blocked_reason
+              ? `<div style="font-size:11px;color:#6b7280;">${row.reminder_blocked_reason}</div>`
+              : "";
+
+            const reminderLabel =
+              row.reminder_count > 0
+                ? `#${row.reminder_count}${
+                    row.reminder_sent_at
+                      ? ` (sidst: ${row.reminder_sent_at})`
+                      : ""
+                  }`
+                : "-";
 
             const cancelBtn = row.canceled
               ? `<form method="post" action="/admin/review-queue/${row.id}/uncancel?key=${encodeURIComponent(
@@ -208,11 +231,16 @@ app.get("/admin/review-queue", requireAdmin, (req, res) => {
                 <td>${row.order_id}</td>
                 <td>${row.email}</td>
                 <td>${row.name || ""}</td>
-                <td>${row.status}</td>
+                <td>${status}</td>
                 <td>${row.created_at}</td>
                 <td>${row.send_after}</td>
                 <td>${row.sent_at || ""}</td>
                 <td>${canceledLabel}</td>
+                <td>
+                  ${interactionLabel}
+                  ${interactionDetail}
+                </td>
+                <td>${reminderLabel}</td>
                 <td>${row.last_error || ""}</td>
                 <td>
                   ${cancelBtn}
@@ -325,6 +353,8 @@ app.get("/admin/review-queue", requireAdmin, (req, res) => {
               <th>Send efter</th>
               <th>Sendt</th>
               <th>Annulleret</th>
+              <th>Interaktion</th>
+              <th>Reminders</th>
               <th>Sidste fejl</th>
               <th>Handling</th>
             </tr>
@@ -466,13 +496,17 @@ app.post(
   }
 );
 
-// LIGE OVER "Start"-sektionen i server.js
+// Debug endpoint til at se alle rækker råt
 app.get("/debug/review-queue", (_req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM review_queue ORDER BY created_at DESC").all();
+    const rows = db
+      .prepare("SELECT * FROM review_queue ORDER BY created_at DESC")
+      .all();
     res.json({ ok: true, count: rows.length, rows });
   } catch (e) {
-    res.status(500).json({ ok: false, error: String(e?.message || e) });
+    res
+      .status(500)
+      .json({ ok: false, error: String(e?.message || e) });
   }
 });
 
@@ -551,22 +585,7 @@ app.post(
   express.urlencoded({ extended: true }),
   (req, res) => {
     try {
-      // 💾 gem hele requesten til debug
-      saveWebhook("mandrill", req);
-
       const raw = req.body?.mandrill_events;
-
-      // ekstra logging så vi kan se hvad Mandrill faktisk sender
-      logger.info(
-        {
-          bodyKeys: Object.keys(req.body || {}),
-          hasMandrillEvents: typeof raw === "string",
-          mandrillEventsPreview:
-            typeof raw === "string" ? raw.slice(0, 300) : null,
-        },
-        "Mandrill webhook hit"
-      );
-
       if (!raw) {
         logger.warn(
           { bodyKeys: Object.keys(req.body || {}) },
@@ -589,7 +608,10 @@ app.post(
       }
 
       if (!Array.isArray(events)) {
-        logger.warn({ type: typeof events }, "mandrill_events er ikke et array");
+        logger.warn(
+          { type: typeof events },
+          "mandrill_events er ikke et array"
+        );
         return res
           .status(400)
           .json({ ok: false, error: "mandrill_events must be an array" });
@@ -602,7 +624,8 @@ app.post(
         const jobId = meta.review_job_id ? Number(meta.review_job_id) : null;
 
         if (!jobId || !Number.isFinite(jobId)) {
-          continue; // vi tracker kun mails hvor vi har et review_job_id
+          // vi tracker kun mails hvor vi har et review_job_id
+          continue;
         }
 
         let reason = null;
@@ -624,7 +647,7 @@ app.post(
             break;
 
           case "open":
-            // Outlook m.fl.: vi accepterer "open" som interaktion
+            // Outlook & co.: vi accepterer open som “interaktion”
             shouldMark = true;
             reason = "open";
             break;
@@ -670,7 +693,10 @@ app.post(
       // Det vigtigste for Mandrill er et 200-svar
       return res.json({ ok: true });
     } catch (e) {
-      logger.error({ err: String(e) }, "Mandrill webhook handler error");
+      logger.error(
+        { err: String(e) },
+        "Mandrill webhook handler error"
+      );
       return res.status(500).json({ ok: false });
     }
   }

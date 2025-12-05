@@ -15,9 +15,14 @@ const mandrill = mailchimp(process.env.MANDRILL_API_KEY);
 // ---------------------------------------------------------------------------
 const MAILER_ENABLED = process.env.MAILER_ENABLED === "1";
 
-// Load template
-const templateHtml = readFileSync(
+// Load templates
+const templateHtmlInitial = readFileSync(
   join(__dirname, "templates", "review.html"),
+  "utf8"
+);
+
+const templateHtmlReminder = readFileSync(
+  join(__dirname, "templates", "review-reminder.html"),
   "utf8"
 );
 
@@ -41,7 +46,8 @@ function parseFrom() {
   };
 }
 
-export async function sendReviewEmail({ toEmail, toName, jobId }) {
+// isReminder med default false
+export async function sendReviewEmail({ toEmail, toName, jobId, isReminder = false }) {
   const normalizedTo = (toEmail || "").trim().toLowerCase();
 
   if (!normalizedTo) {
@@ -62,20 +68,29 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
   const { from_email, from_name } = parseFrom();
 
   // Render HTML med links (og log dem)
-  const html = renderTemplate({ name: toName || "" });
+  const html = renderTemplate({ name: toName || "", isReminder });
+
+  const baseSubject = "Havde du en femstjernet oplevelse med Smartphoneshop.dk?";
+  const subject = isReminder
+    ? "Venlig påmindelse: Havde du en femstjernet oplevelse med Smartphoneshop.dk?"
+    : baseSubject;
+
+  const tags = isReminder
+    ? ["review-reminder", "review-request", "local-test"]
+    : ["review-request", "local-test"];
 
   const message = {
     from_email,
     from_name: from_name || undefined,
-    subject: "Havde du en femstjernet oplevelse med Smartphoneshop.dk?",
+    subject,
     to: [{ email: normalizedTo, name: toName || "", type: "to" }],
     html,
     auto_text: true,
     preserve_recipients: false,
     headers: { "X-Review-Mail": "true" },
-    tags: ["review-request", "local-test"],
+    tags,
 
-    // 🔍 eksplicit tracking
+    // eksplicit tracking
     track_opens: true,
     track_clicks: true,
 
@@ -89,10 +104,12 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
   logger.info(
     {
       to: normalizedTo,
+      isReminder,
       track_opens: message.track_opens,
       track_clicks: message.track_clicks,
       hasMetadata: !!message.metadata,
       metadata: message.metadata,
+      tags: message.tags,
     },
     "MAILER: sender review-mail via Mandrill"
   );
@@ -135,7 +152,7 @@ export async function sendReviewEmail({ toEmail, toName, jobId }) {
   }
 }
 
-function renderTemplate({ name }) {
+function renderTemplate({ name, isReminder }) {
   // Prøv først de nye navne (GOOGLE_URL osv.),
   // fald tilbage til de gamle *_REVIEW_URL hvis de findes,
   // og ellers til '#'
@@ -154,13 +171,20 @@ function renderTemplate({ name }) {
     process.env.TRUSTPILOT_REVIEW_URL ||
     "#";
 
-  // Log lige hvilke links vi sender med (til debug af click tracking)
+  // Log hvilke links vi sender med (til debug af click/open tracking)
   logger.info(
-    { GOOGLE_URL: g, PRICERUNNER_URL: p, TRUSTPILOT_URL: t },
+    {
+      isReminder,
+      GOOGLE_URL: g,
+      PRICERUNNER_URL: p,
+      TRUSTPILOT_URL: t,
+    },
     "MAILER: review-links i template"
   );
 
-  return templateHtml
+  const tpl = isReminder ? templateHtmlReminder : templateHtmlInitial;
+
+  return tpl
     .replaceAll("{{NAME}}", name || "")
     .replaceAll("{{GOOGLE_URL}}", g)
     .replaceAll("{{PRICERUNNER_URL}}", p)
